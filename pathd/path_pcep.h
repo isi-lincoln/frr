@@ -299,6 +299,8 @@ struct pcep_error {
 #define ERROR_19_3 2
 #define ERROR_19_9 3
 #define ERROR_23_1 4
+#define ERROR_24_2 5
+#define ERROR_24_1 6
 };
 
 /* Path Helper Functions */
