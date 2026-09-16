@@ -719,6 +719,29 @@ void sr_adj_sid_add_single(const struct isis_adjacency *adj, int family,
 	if (circuit->ext == NULL)
 		circuit->ext = isis_alloc_ext_subtlvs();
 
+	/* Advertise this link's local interface address in the same extended
+	 * reachability sub-TLVs that carry the adjacency-SID. An observer reading
+	 * the flooded LSDB can then tie each adj-SID to its link's connected
+	 * subnet (the adj-SID sub-TLV names only neighbour + metric, which is
+	 * ambiguous across same-metric parallel links). Set per family, matching
+	 * the adj-SID being added: the IPv4 SID pairs with the interface's IPv4
+	 * address, the IPv6 SID with its non-link-local IPv6 address. */
+	if (family == AF_INET && circuit->ip_addrs &&
+	    listcount(circuit->ip_addrs)) {
+		struct prefix_ipv4 *pip4 = listgetdata(listhead(circuit->ip_addrs));
+
+		circuit->ext->local_addr = pip4->prefix;
+		SET_SUBTLV(circuit->ext, EXT_LOCAL_ADDR);
+	}
+	if (family == AF_INET6 && circuit->ipv6_non_link &&
+	    listcount(circuit->ipv6_non_link)) {
+		struct prefix_ipv6 *pip6 =
+			listgetdata(listhead(circuit->ipv6_non_link));
+
+		IPV6_ADDR_COPY(&circuit->ext->local_addr6, &pip6->prefix);
+		SET_SUBTLV(circuit->ext, EXT_LOCAL_ADDR6);
+	}
+
 	sra = XCALLOC(MTYPE_ISIS_SR_INFO, sizeof(*sra));
 	sra->type = backup ? ISIS_SR_ADJ_BACKUP : ISIS_SR_ADJ_NORMAL;
 	sra->input_label = input_label;
