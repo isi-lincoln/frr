@@ -1047,8 +1047,26 @@ struct pcep_object_header *pcep_decode_object(const uint8_t *obj_buf, size_t buf
 			struct pcep_object_tlv_header *tlv =
 				pcep_decode_tlv(obj_buf + tlv_index);
 			if (tlv == NULL) {
-				/* TODO should we do anything else here ? */
-				return object;
+				/* An unrecognized or undecodable TLV must not stop
+				 * parsing the rest of the object: RFC 5440 7.1
+				 * requires unknown TLVs to be ignored. Read the TLV
+				 * length from its header (the second 16-bit word),
+				 * skip past it, and keep going so that later TLVs in
+				 * the same object (e.g. a TE-PATH-BINDING following an
+				 * unhandled COLOR TLV) are still decoded.
+				 */
+				const uint16_t *tlv_hdr16 =
+					(const uint16_t *)(obj_buf + tlv_index);
+				uint16_t skip = normalize_pcep_tlv_length(
+					ntohs(tlv_hdr16[1]) + TLV_HEADER_LENGTH);
+				if (skip == 0) {
+					/* Malformed zero-length TLV: cannot make
+					 * progress, stop parsing this object.
+					 */
+					return object;
+				}
+				tlv_index += skip;
+				continue;
 			}
 
 			/* The TLV length does not include the TLV header */
