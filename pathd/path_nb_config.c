@@ -288,9 +288,18 @@ int pathd_srte_policy_name_modify(struct nb_cb_modify_args *args)
 	if (args->event != NB_EV_APPLY && args->event != NB_EV_VALIDATE)
 		return NB_OK;
 
-	policy = nb_running_get_entry(args->dnode, NULL, true);
-
 	if (args->event == NB_EV_VALIDATE) {
+		/*
+		 * The policy may not be in the running configuration yet:
+		 * when the policy create and its name arrive in the same
+		 * transaction (e.g. a batched configuration load), the
+		 * create has not been applied when the name is validated.
+		 * The name is then being set for the first time.
+		 */
+		policy = nb_running_get_entry(args->dnode, NULL, false);
+		if (policy == NULL)
+			return NB_OK;
+
 		/* the policy name is fixed after setting it once */
 		if (strlen(policy->name) > 0) {
 			flog_warn(EC_LIB_NB_CB_CONFIG_VALIDATE,
@@ -299,6 +308,8 @@ int pathd_srte_policy_name_modify(struct nb_cb_modify_args *args)
 		} else
 			return NB_OK;
 	}
+
+	policy = nb_running_get_entry(args->dnode, NULL, true);
 
 	name = yang_dnode_get_string(args->dnode, NULL);
 	strlcpy(policy->name, name, sizeof(policy->name));
