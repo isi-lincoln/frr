@@ -944,6 +944,69 @@ static int sr_adj_ip_enabled(struct isis_adjacency *adj, int family, bool global
 }
 
 /**
+ * Check if an adjacency already has a primary Adjacency-SID for a family.
+ *
+ * @param adj	  IS-IS Adjacency
+ * @param family  Inet Family (IPv4 or IPv6)
+ *
+ * @return	  True if a primary Adjacency-SID exists, false otherwise
+ */
+static bool sr_adj_has_sid(struct isis_adjacency *adj, int family)
+{
+	struct sr_adjacency *sra;
+	struct listnode *node;
+
+	for (ALL_LIST_ELEMENTS_RO(adj->adj_sids, node, sra))
+		if (sra->type == ISIS_SR_ADJ_NORMAL && sra->nexthop.family == family)
+			return true;
+
+	return false;
+}
+
+/**
+ * When a circuit gets a new address, add the Adjacency-SIDs that could not be
+ * added when its adjacencies learned their addresses.
+ *
+ * An Adjacency-SID is only added if the neighbor address is on a subnet of the
+ * circuit. After an interface comes up, the adjacency can form and learn the
+ * neighbor addresses before the circuit has its own: the IPv6 link-local
+ * address is only usable once Duplicate Address Detection completes. The
+ * subnet check then fails, and nothing else adds the Adjacency-SID later.
+ *
+ * @param circuit  IS-IS Circuit
+ *
+ * @return	   0
+ */
+static int sr_circuit_add_addr(struct isis_circuit *circuit)
+{
+	struct isis_area *area = circuit->area;
+	struct isis_adjacency *adj;
+	bool added = false;
+
+	if (!area || !area->srdb.enabled)
+		return 0;
+
+	frr_each (isis_area_adj_list, &area->adjacency_list, adj) {
+		if (adj->circuit != circuit || adj->adj_state != ISIS_ADJ_UP)
+			continue;
+
+		if (adj->ipv4_address_count > 0 && !sr_adj_has_sid(adj, AF_INET)) {
+			sr_adj_sid_add(adj, AF_INET);
+			added |= sr_adj_has_sid(adj, AF_INET);
+		}
+		if (adj->ll_ipv6_count > 0 && !sr_adj_has_sid(adj, AF_INET6)) {
+			sr_adj_sid_add(adj, AF_INET6);
+			added |= sr_adj_has_sid(adj, AF_INET6);
+		}
+	}
+
+	if (added)
+		lsp_regenerate_schedule(area, area->is_type, 0);
+
+	return 0;
+}
+
+/**
  * When IS-IS Adjacency doesn't have any IPv4 or IPv6 addresses anymore,
  * delete the corresponding Adjacency-SID(s) accordingly.
  *
@@ -1350,6 +1413,7 @@ void isis_sr_init(void)
 	hook_register(isis_adj_state_change_hook, sr_adj_state_change);
 	hook_register(isis_adj_ip_enabled_hook, sr_adj_ip_enabled);
 	hook_register(isis_adj_ip_disabled_hook, sr_adj_ip_disabled);
+	hook_register(isis_circuit_add_addr_hook, sr_circuit_add_addr);
 }
 
 /**
@@ -1361,4 +1425,5 @@ void isis_sr_term(void)
 	hook_unregister(isis_adj_state_change_hook, sr_adj_state_change);
 	hook_unregister(isis_adj_ip_enabled_hook, sr_adj_ip_enabled);
 	hook_unregister(isis_adj_ip_disabled_hook, sr_adj_ip_disabled);
+	hook_unregister(isis_circuit_add_addr_hook, sr_circuit_add_addr);
 }
