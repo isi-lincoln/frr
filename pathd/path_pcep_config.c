@@ -405,7 +405,7 @@ int path_pcep_config_update_path(struct path *path)
 	if (segment_list_name_taken(path, candidate)) {
 		zlog_warn("segment list name %s-%u of path %s is already in use, rejecting the path",
 			  path->name, path->plsp_id, path->name);
-		return ERROR_24_2;
+		return ERROR_24_1;
 	}
 
 	candidate->policy->srp_id = path->srp_id;
